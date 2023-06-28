@@ -517,7 +517,12 @@ impl RendezvousServer {
                             return true;
                         }
                     } else {
-                        log::info!("API error on RequestRelay {} {}", rf.id, rf.uuid);
+                        log::info!(
+                            "API error on RequestRelay {} {} [{}]",
+                            rf.id,
+                            rf.uuid,
+                            api_resp.unwrap_err()
+                        );
                         self.send_reject_relay(addr, "API 异常, 请联系管理员".to_owned())
                             .await;
                         return true;
@@ -735,8 +740,14 @@ impl RendezvousServer {
                 });
                 return Ok((msg_out, None));
             }
+        } else {
+            // ignore API errors, they'll be blocked later for better UX
+            log::info!(
+                "API error on PunchHoleRequest {} [{}]",
+                ph.id,
+                api_resp.unwrap_err()
+            );
         }
-        // ignore API errors, they'll be blocked later for better UX
 
         let id = ph.id;
         // punch hole request from A, relay to B,
