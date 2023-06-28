@@ -1,3 +1,4 @@
+mod natfrp;
 use clap::App;
 mod common;
 mod relay_server;

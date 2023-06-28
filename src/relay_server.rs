@@ -430,6 +430,16 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
                 if !key.is_empty() && rf.licence_key != key {
                     return;
                 }
+
+                let api_resp = crate::natfrp::relay_open(rf.uuid.clone()).await;
+                if api_resp.is_err() {
+                    log::info!("API error on relayrequest {} from {}", rf.uuid, addr);
+                    return;
+                } else if !api_resp.unwrap() {
+                    log::info!("Denied relayrequest {} from {}", rf.uuid, addr);
+                    return;
+                }
+
                 if !rf.uuid.is_empty() {
                     let mut peer = PEERS.lock().await.remove(&rf.uuid);
                     if let Some(peer) = peer.as_mut() {

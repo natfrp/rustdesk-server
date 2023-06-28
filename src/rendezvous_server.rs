@@ -1,4 +1,5 @@
 use crate::common::*;
+use crate::natfrp;
 use crate::peer::*;
 use hbb_common::{
     allow_err, bail,
@@ -496,6 +497,32 @@ impl RendezvousServer {
                     if let Some(sink) = sink.take() {
                         self.tcp_punch.lock().await.insert(try_into_v4(addr), sink);
                     }
+
+                    if rf.token.is_empty() {
+                        self.send_reject_relay(addr, "请先登录账户".to_owned())
+                            .await;
+                        return true;
+                    }
+
+                    let api_resp = natfrp::relay_init(rf.uuid.clone(), rf.token.clone()).await;
+                    if let Ok(api_resp) = api_resp {
+                        if api_resp != "OK" {
+                            log::info!(
+                                "API rejection on RequestRelay {} {} {}",
+                                rf.id,
+                                rf.uuid,
+                                rf.token
+                            );
+                            self.send_reject_relay(addr, api_resp).await;
+                            return true;
+                        }
+                    } else {
+                        log::info!("API error on RequestRelay {} {}", rf.id, rf.uuid);
+                        self.send_reject_relay(addr, "API 异常, 请联系管理员".to_owned())
+                            .await;
+                        return true;
+                    }
+
                     if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
                         let mut msg_out = RendezvousMessage::new();
                         rf.socket_addr = AddrMangle::encode(addr).into();
@@ -688,6 +715,29 @@ impl RendezvousServer {
             });
             return Ok((msg_out, None));
         }
+        if ph.token.is_empty() {
+            let mut msg_out = RendezvousMessage::new();
+            msg_out.set_punch_hole_response(PunchHoleResponse {
+                failure: punch_hole_response::Failure::LICENSE_OVERUSE.into(),
+                ..Default::default()
+            });
+            return Ok((msg_out, None));
+        }
+
+        let api_resp = natfrp::auth(ph.token.clone()).await;
+        if let Ok(api_resp) = api_resp {
+            if !api_resp {
+                log::info!("API rejection on punch hole {} {}", ph.id, ph.token);
+                let mut msg_out = RendezvousMessage::new();
+                msg_out.set_punch_hole_response(PunchHoleResponse {
+                    failure: punch_hole_response::Failure::LICENSE_OVERUSE.into(),
+                    ..Default::default()
+                });
+                return Ok((msg_out, None));
+            }
+        }
+        // ignore API errors, they'll be blocked later for better UX
+
         let id = ph.id;
         // punch hole request from A, relay to B,
         // check if in same intranet first,
@@ -1210,6 +1260,16 @@ impl RendezvousServer {
             }
         }
         false
+    }
+
+    #[inline]
+    async fn send_reject_relay(&mut self, addr: SocketAddr, msg: String) {
+        let mut msg_out = RendezvousMessage::new();
+        msg_out.set_relay_response(RelayResponse {
+            refuse_reason: msg,
+            ..Default::default()
+        });
+        allow_err!(self.send_to_tcp_sync(msg_out, addr).await);
     }
 }
 
