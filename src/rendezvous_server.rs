@@ -710,9 +710,9 @@ impl RendezvousServer {
         addr: SocketAddr,
         ph: PunchHoleRequest,
         key: &str,
-        ws: bool,
+        _: bool,
     ) -> ResultType<(RendezvousMessage, Option<SocketAddr>)> {
-        let mut ph = ph;
+        let ph = ph;
         if !key.is_empty() && ph.licence_key != key {
             let mut msg_out = RendezvousMessage::new();
             msg_out.set_punch_hole_response(PunchHoleResponse {
@@ -762,8 +762,8 @@ impl RendezvousServer {
         // because punch hole won't work if in the same intranet,
         // all routers will drop such self-connections.
         if let Some(peer) = self.pm.get(&id).await {
+            let r = peer.read().await;
             let (elapsed, peer_addr) = {
-                let r = peer.read().await;
                 (r.last_reg_time.elapsed().as_millis() as i32, r.socket_addr)
             };
             if elapsed >= REG_TIMEOUT {
@@ -775,52 +775,24 @@ impl RendezvousServer {
                 return Ok((msg_out, None));
             }
             let mut msg_out = RendezvousMessage::new();
-            let peer_is_lan = self.is_lan(peer_addr);
-            let is_lan = self.is_lan(addr);
-            let mut relay_server = self.get_relay_server(addr.ip(), peer_addr.ip());
-            if unsafe { ALWAYS_USE_RELAY } || (peer_is_lan ^ is_lan) {
-                if peer_is_lan {
-                    // https://github.com/rustdesk/rustdesk-server/issues/24
-                    relay_server = self.inner.local_ip.clone()
-                }
-                ph.nat_type = NatType::SYMMETRIC.into(); // will force relay
-            }
-            let same_intranet: bool = !ws
-                && (peer_is_lan && is_lan || {
-                    match (peer_addr, addr) {
-                        (SocketAddr::V4(a), SocketAddr::V4(b)) => a.ip() == b.ip(),
-                        (SocketAddr::V6(a), SocketAddr::V6(b)) => a.ip() == b.ip(),
-                        _ => false,
+            msg_out.set_punch_hole_response(PunchHoleResponse {
+                pk: sign::sign(
+                    &hbb_common::message_proto::IdPk {
+                        id: id.clone(),
+                        pk: r.pk.clone(),
+                        ..Default::default()
                     }
-                });
-            let socket_addr = AddrMangle::encode(addr).into();
-            if same_intranet {
-                log::debug!(
-                    "Fetch local addr {:?} {:?} request from {:?}",
-                    id,
-                    peer_addr,
-                    addr
-                );
-                msg_out.set_fetch_local_addr(FetchLocalAddr {
-                    socket_addr,
-                    relay_server,
-                    ..Default::default()
-                });
-            } else {
-                log::debug!(
-                    "Punch hole {:?} {:?} request from {:?}",
-                    id,
-                    peer_addr,
-                    addr
-                );
-                msg_out.set_punch_hole(PunchHole {
-                    socket_addr,
-                    nat_type: ph.nat_type,
-                    relay_server,
-                    ..Default::default()
-                });
-            }
-            Ok((msg_out, Some(peer_addr)))
+                    .write_to_bytes()
+                    .unwrap_or_default(),
+                    self.inner.sk.as_ref().unwrap(),
+                )
+                .into(),
+                socket_addr: AddrMangle::encode(peer_addr).into(),
+                union: punch_hole_response::Union::NatType(NatType::SYMMETRIC.into()).into(),
+                relay_server: self.get_relay_server(addr.ip(), peer_addr.ip()),
+                ..Default::default()
+            });
+            Ok((msg_out, None))
         } else {
             let mut msg_out = RendezvousMessage::new();
             msg_out.set_punch_hole_response(PunchHoleResponse {
