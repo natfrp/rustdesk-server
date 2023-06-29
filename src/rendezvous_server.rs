@@ -530,6 +530,7 @@ impl RendezvousServer {
 
                     if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
                         let mut msg_out = RendezvousMessage::new();
+                        rf.token.clear();
                         rf.socket_addr = AddrMangle::encode(addr).into();
                         msg_out.set_request_relay(rf);
                         let peer_addr = peer.read().await.socket_addr;
@@ -723,7 +724,7 @@ impl RendezvousServer {
         if ph.token.is_empty() {
             let mut msg_out = RendezvousMessage::new();
             msg_out.set_punch_hole_response(PunchHoleResponse {
-                failure: punch_hole_response::Failure::LICENSE_OVERUSE.into(),
+                other_failure: "请先登录账户".to_owned(),
                 ..Default::default()
             });
             return Ok((msg_out, None));
@@ -731,22 +732,27 @@ impl RendezvousServer {
 
         let api_resp = natfrp::auth(ph.token.clone()).await;
         if let Ok(api_resp) = api_resp {
-            if !api_resp {
-                log::info!("API rejection on punch hole {} {}", ph.id, ph.token);
+            if api_resp != "OK" {
+                log::info!("API rejection on punch hole {} {} {}", ph.id, ph.token, api_resp);
                 let mut msg_out = RendezvousMessage::new();
                 msg_out.set_punch_hole_response(PunchHoleResponse {
-                    failure: punch_hole_response::Failure::LICENSE_OVERUSE.into(),
+                    other_failure: api_resp,
                     ..Default::default()
                 });
                 return Ok((msg_out, None));
             }
         } else {
-            // ignore API errors, they'll be blocked later for better UX
             log::info!(
                 "API error on PunchHoleRequest {} [{}]",
                 ph.id,
                 api_resp.unwrap_err()
             );
+            let mut msg_out = RendezvousMessage::new();
+            msg_out.set_punch_hole_response(PunchHoleResponse {
+                other_failure: "API 异常, 请联系管理员".to_owned(),
+                ..Default::default()
+            });
+            return Ok((msg_out, None));
         }
 
         let id = ph.id;
