@@ -23,37 +23,36 @@ lazy_static::lazy_static! {
 }
 
 #[allow(dead_code)]
-pub async fn auth(token: String) -> ResultType<bool> {
-    return Ok(API_CLIENT
+pub async fn auth(token: String) -> ResultType<String> {
+    Ok(API_CLIENT
         .post("https://natfrp-api.globalslb.net/rustdesk/auth")
         .body(token)
         .send()
         .await?
         .text()
-        .await?
-        == "OK");
+        .await?)
 }
 
 #[allow(dead_code)]
 pub async fn relay_init(uuid: String, token: String) -> ResultType<String> {
-    return Ok(API_CLIENT
+    Ok(API_CLIENT
         .post("https://natfrp-api.globalslb.net/rustdesk/relay_init")
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(format!("uuid={}&token={}", uuid, token))
         .send()
         .await?
         .text()
-        .await?);
+        .await?)
 }
 
 #[allow(dead_code)]
 pub async fn relay_open(uuid: String) -> ResultType<bool> {
-    return Ok(API_CLIENT
+    Ok(API_CLIENT
         .post("https://natfrp-api.globalslb.net/rustdesk/relay_open")
         .body(uuid)
         .send()
         .await?
         .text()
         .await?
-        == "OK");
+        == "OK")
 }
