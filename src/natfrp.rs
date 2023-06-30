@@ -22,23 +22,14 @@ lazy_static::lazy_static! {
     .unwrap();
 }
 
-#[allow(dead_code)]
-pub async fn auth(token: String) -> ResultType<String> {
+async fn request(endpoint: &str, body: String) -> ResultType<String> {
     Ok(API_CLIENT
-        .post("https://natfrp-api.globalslb.net/rustdesk/auth")
-        .body(token)
-        .send()
-        .await?
-        .text()
-        .await?)
-}
-
-#[allow(dead_code)]
-pub async fn relay_init(uuid: String, token: String) -> ResultType<String> {
-    Ok(API_CLIENT
-        .post("https://natfrp-api.globalslb.net/rustdesk/relay_init")
+        .post(format!(
+            "https://natfrp-api.globalslb.net/rustdesk{}",
+            endpoint
+        ))
         .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(format!("uuid={}&token={}", uuid, token))
+        .body(body)
         .send()
         .await?
         .text()
@@ -46,13 +37,16 @@ pub async fn relay_init(uuid: String, token: String) -> ResultType<String> {
 }
 
 #[allow(dead_code)]
-pub async fn relay_open(uuid: String) -> ResultType<bool> {
-    Ok(API_CLIENT
-        .post("https://natfrp-api.globalslb.net/rustdesk/relay_open")
-        .body(uuid)
-        .send()
-        .await?
-        .text()
-        .await?
-        == "OK")
+pub async fn punch_hole(id: &str, token: &str) -> ResultType<String> {
+    request("/punch_hole", format!("id={}&token={}", id, token)).await
+}
+
+#[allow(dead_code)]
+pub async fn relay_init(uuid: &str, token: &str) -> ResultType<String> {
+    request("/relay_init", format!("uuid={}&token={}", uuid, token)).await
+}
+
+#[allow(dead_code)]
+pub async fn relay_open(uuid: &str) -> ResultType<String> {
+    request("/relay_open", format!("uuid={}", uuid)).await
 }
