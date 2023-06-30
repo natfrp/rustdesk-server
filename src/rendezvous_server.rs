@@ -1154,6 +1154,7 @@ impl RendezvousServer {
             let ws_stream = tokio_tungstenite::accept_async(stream).await?;
             let (a, mut b) = ws_stream.split();
             sink = Some(Sink::Ws(a));
+            self.do_key_exchange(&mut sink).await;
             while let Ok(Some(Ok(msg))) = timeout(30_000, b.next()).await {
                 if let tungstenite::Message::Binary(bytes) = msg {
                     if !self.handle_tcp(&bytes, &mut sink, addr, key, ws).await {
@@ -1164,6 +1165,7 @@ impl RendezvousServer {
         } else {
             let (a, mut b) = Framed::new(stream, BytesCodec::new()).split();
             sink = Some(Sink::TcpStream(a));
+            self.do_key_exchange(&mut sink).await;
             while let Ok(Some(Ok(bytes))) = timeout(30_000, b.next()).await {
                 if !self.handle_tcp(&bytes, &mut sink, addr, key, ws).await {
                     break;
@@ -1175,6 +1177,15 @@ impl RendezvousServer {
         }
         log::debug!("Tcp connection from {:?} closed", addr);
         Ok(())
+    }
+
+    async fn do_key_exchange(&mut self, sink: &mut Option<Sink>) {
+        let mut msg = RendezvousMessage::new();
+        msg.set_key_exchange(KeyExchange {
+            keys: vec![], // fails instantly
+            ..Default::default()
+        });
+        Self::send_to_sink(sink, msg).await;
     }
 
     #[inline]
