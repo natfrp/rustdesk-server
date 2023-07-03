@@ -504,7 +504,7 @@ impl RendezvousServer {
                         return true;
                     }
 
-                    let api_resp = natfrp::relay_init(&rf.id, &rf.uuid, &rf.token).await;
+                    let api_resp = natfrp::relay_init(&rf.id, &rf.uuid, &rf.token, &rf.relay_server).await;
                     if let Ok(api_resp) = api_resp {
                         if api_resp != "OK" {
                             log::info!(
