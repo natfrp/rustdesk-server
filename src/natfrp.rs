@@ -42,8 +42,8 @@ pub async fn punch_hole(id: &str, token: &str) -> ResultType<String> {
 }
 
 #[allow(dead_code)]
-pub async fn relay_init(uuid: &str, token: &str) -> ResultType<String> {
-    request("/relay_init", format!("uuid={}&token={}", uuid, token)).await
+pub async fn relay_init(id: &str, uuid: &str, token: &str) -> ResultType<String> {
+    request("/relay_init", format!("id={}&uuid={}&token={}", id, uuid, token)).await
 }
 
 #[allow(dead_code)]

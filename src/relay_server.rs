@@ -431,7 +431,7 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
                     return;
                 }
 
-                let api_resp = crate::natfrp::relay_open(rf.uuid.as_str()).await;
+                let api_resp = crate::natfrp::relay_open(&rf.uuid).await;
                 if let Ok(api_resp) = api_resp {
                     if api_resp != "OK" {
                         log::info!("RelayRequest rejected {} [{}]: {}", addr, rf.uuid, api_resp);

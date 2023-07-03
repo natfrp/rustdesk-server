@@ -504,7 +504,7 @@ impl RendezvousServer {
                         return true;
                     }
 
-                    let api_resp = natfrp::relay_init(rf.uuid.as_str(), rf.token.as_str()).await;
+                    let api_resp = natfrp::relay_init(&rf.id, &rf.uuid, &rf.token).await;
                     if let Ok(api_resp) = api_resp {
                         if api_resp != "OK" {
                             log::info!(
@@ -708,7 +708,7 @@ impl RendezvousServer {
     #[inline]
     async fn handle_punch_hole_request(
         &mut self,
-        addr: SocketAddr,
+        _addr: SocketAddr,
         ph: PunchHoleRequest,
         key: &str,
         _: bool,
@@ -731,22 +731,23 @@ impl RendezvousServer {
             return Ok((msg_out, None));
         }
 
-        let api_resp = natfrp::punch_hole(ph.id.as_str(), ph.token.as_str()).await;
-        if let Ok(api_resp) = api_resp {
-            if api_resp != "OK" {
-                log::info!("PunchHole rejected [{}] {}: {}", ph.id, ph.token, api_resp);
-                let mut msg_out = RendezvousMessage::new();
-                msg_out.set_punch_hole_response(PunchHoleResponse {
-                    other_failure: api_resp,
-                    ..Default::default()
-                });
-                return Ok((msg_out, None));
-            }
-        } else {
-            log::info!("PunchHole API error [{}]: {}", ph.id, api_resp.unwrap_err());
+        let api_resp = natfrp::punch_hole(&ph.id, &ph.token).await;
+        if let Err(api_resp) = api_resp {
+            log::info!("PunchHole API error [{}]: {}", ph.id, api_resp);
             let mut msg_out = RendezvousMessage::new();
             msg_out.set_punch_hole_response(PunchHoleResponse {
                 other_failure: "API 异常, 请联系管理员".to_owned(),
+                ..Default::default()
+            });
+            return Ok((msg_out, None));
+        }
+
+        let api_resp = api_resp.unwrap();
+        if !api_resp.starts_with("OK:") {
+            log::info!("PunchHole rejected [{}] {}: {}", ph.id, ph.token, api_resp);
+            let mut msg_out = RendezvousMessage::new();
+            msg_out.set_punch_hole_response(PunchHoleResponse {
+                other_failure: api_resp,
                 ..Default::default()
             });
             return Ok((msg_out, None));
@@ -786,7 +787,7 @@ impl RendezvousServer {
                 .into(),
                 socket_addr: AddrMangle::encode(peer_addr).into(),
                 union: punch_hole_response::Union::NatType(NatType::SYMMETRIC.into()).into(),
-                relay_server: self.get_relay_server(addr.ip(), peer_addr.ip()),
+                relay_server: api_resp[3..].to_string(),
                 ..Default::default()
             });
             Ok((msg_out, None))
