@@ -504,7 +504,8 @@ impl RendezvousServer {
                         return true;
                     }
 
-                    let api_resp = natfrp::relay_init(&rf.id, &rf.uuid, &rf.token, &rf.relay_server).await;
+                    let api_resp =
+                        natfrp::relay_init(&rf.id, &rf.uuid, &rf.token, &rf.relay_server).await;
                     if let Ok(api_resp) = api_resp {
                         if api_resp != "OK" {
                             log::info!(
@@ -580,11 +581,10 @@ impl RendezvousServer {
                     msg_out.set_test_nat_response(res);
                     Self::send_to_sink(sink, msg_out).await;
                 }
-                Some(rendezvous_message::Union::RegisterPk(_)) => {
-                    let res = register_pk_response::Result::NOT_SUPPORT;
+                Some(rendezvous_message::Union::RegisterPk(rp)) => {
                     let mut msg_out = RendezvousMessage::new();
                     msg_out.set_register_pk_response(RegisterPkResponse {
-                        result: res.into(),
+                        result: self.handle_change_id(rp, addr).await.into(),
                         ..Default::default()
                     });
                     Self::send_to_sink(sink, msg_out).await;
@@ -1152,7 +1152,7 @@ impl RendezvousServer {
             let ws_stream = tokio_tungstenite::accept_async(stream).await?;
             let (a, mut b) = ws_stream.split();
             sink = Some(Sink::Ws(a));
-            self.do_key_exchange(&mut sink).await;
+            Self::send_key_exchange(&mut sink).await;
             while let Ok(Some(Ok(msg))) = timeout(30_000, b.next()).await {
                 if let tungstenite::Message::Binary(bytes) = msg {
                     if !self.handle_tcp(&bytes, &mut sink, addr, key, ws).await {
@@ -1163,7 +1163,7 @@ impl RendezvousServer {
         } else {
             let (a, mut b) = Framed::new(stream, BytesCodec::new()).split();
             sink = Some(Sink::TcpStream(a));
-            self.do_key_exchange(&mut sink).await;
+            Self::send_key_exchange(&mut sink).await;
             while let Ok(Some(Ok(bytes))) = timeout(30_000, b.next()).await {
                 if !self.handle_tcp(&bytes, &mut sink, addr, key, ws).await {
                     break;
@@ -1175,15 +1175,6 @@ impl RendezvousServer {
         }
         log::debug!("Tcp connection from {:?} closed", addr);
         Ok(())
-    }
-
-    async fn do_key_exchange(&mut self, sink: &mut Option<Sink>) {
-        let mut msg = RendezvousMessage::new();
-        msg.set_key_exchange(KeyExchange {
-            keys: vec![], // fails instantly
-            ..Default::default()
-        });
-        Self::send_to_sink(sink, msg).await;
     }
 
     #[inline]
@@ -1258,6 +1249,102 @@ impl RendezvousServer {
             }
         }
         false
+    }
+
+    // ==========> SakuraFrp Methods <==========
+
+    #[inline]
+    async fn handle_change_id(
+        &mut self,
+        rp: RegisterPk,
+        addr: SocketAddr,
+    ) -> register_pk_response::Result {
+        if rp.uuid.is_empty() {
+            return register_pk_response::Result::UUID_MISMATCH;
+        }
+        if !hbb_common::is_valid_custom_id(&rp.id) {
+            return register_pk_response::Result::INVALID_ID_FORMAT;
+        }
+        if rp.id == rp.old_id {
+            return register_pk_response::Result::OK;
+        }
+
+        let old_id = rp.old_id;
+        let ip = addr.ip().to_string();
+        if !self.check_ip_blocker(&ip, &old_id).await {
+            return register_pk_response::Result::TOO_FREQUENT;
+        }
+
+        let peer = self.pm.get(&old_id).await;
+        if peer.is_none() {
+            return register_pk_response::Result::UUID_MISMATCH;
+        }
+
+        let peer = peer.unwrap();
+        {
+            let p = peer.read().await;
+            if p.uuid != rp.uuid {
+                log::warn!(
+                    "Change ID peer {} uuid mismatch: {:?} vs {:?}",
+                    old_id,
+                    rp.uuid,
+                    p.uuid
+                );
+                drop(p);
+                return register_pk_response::Result::UUID_MISMATCH;
+            }
+            if p.info.ip != ip {
+                log::warn!(
+                    "Change ID peer {} ip mismatch: {} vs {}",
+                    old_id,
+                    ip,
+                    p.info.ip,
+                );
+                drop(p);
+                return register_pk_response::Result::UUID_MISMATCH;
+            }
+        }
+
+        let mut req_pk = peer.read().await.reg_pk;
+        if req_pk.1.elapsed().as_secs() > 6 {
+            req_pk.0 = 0;
+        } else if req_pk.0 > 2 {
+            return register_pk_response::Result::TOO_FREQUENT;
+        }
+        req_pk.0 += 1;
+        req_pk.1 = Instant::now();
+        peer.write().await.reg_pk = req_pk;
+
+        if self.pm.get(&rp.id).await.is_some() {
+            return register_pk_response::Result::ID_EXISTS;
+        }
+
+        let api_resp = natfrp::change_id(&old_id, &rp.id).await;
+        match api_resp {
+            Ok(api_resp) if api_resp == "OK" => {
+                log::info!("Change ID {} => {}", old_id, rp.id);
+            }
+            Ok(api_resp) => {
+                log::info!("Change ID rejected {} => {}: {}", old_id, rp.id, api_resp);
+                return register_pk_response::Result::NOT_SUPPORT;
+            }
+            Err(err) => {
+                log::info!("Change ID API error {} => {}: {}", old_id, rp.id, err);
+                return register_pk_response::Result::SERVER_ERROR;
+            }
+        }
+
+        self.pm.update_id(old_id, rp.id).await
+    }
+
+    #[inline]
+    async fn send_key_exchange(sink: &mut Option<Sink>) {
+        let mut msg_out = RendezvousMessage::new();
+        msg_out.set_key_exchange(KeyExchange {
+            keys: vec![], // fails instantly
+            ..Default::default()
+        });
+        Self::send_to_sink(sink, msg_out).await;
     }
 
     #[inline]
