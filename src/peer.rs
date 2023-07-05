@@ -198,9 +198,4 @@ impl PeerMap {
     pub(crate) async fn get_in_memory(&self, id: &str) -> Option<LockPeer> {
         self.map.read().await.get(id).cloned()
     }
-
-    #[inline]
-    pub(crate) async fn is_in_memory(&self, id: &str) -> bool {
-        self.map.read().await.contains_key(id)
-    }
 }
