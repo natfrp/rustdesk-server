@@ -7,7 +7,7 @@ use reqwest::Client;
 lazy_static::lazy_static! {
     static ref API_CLIENT: Client = Client::builder()
     .timeout(Duration::from_secs(5))
-    .user_agent(&std::env::var("NATFRP_UA").unwrap())
+    .user_agent(std::env::var("NATFRP_UA").unwrap())
     .default_headers({
         let mut headers = header::HeaderMap::new();
         let mut auth_value =
