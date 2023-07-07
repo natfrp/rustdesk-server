@@ -3,6 +3,7 @@ use std::time::Duration;
 use hbb_common::ResultType;
 use http::header;
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 lazy_static::lazy_static! {
     static ref API_CLIENT: Client = Client::builder()
@@ -50,9 +51,19 @@ pub async fn relay_init(id: &str, uuid: &str, token: &str, server: &str) -> Resu
     .await
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RelayOpenResponse {
+    pub success: bool,
+    pub message: Option<String>,
+    pub speed: Option<u32>,
+    pub uid: Option<u32>,
+}
+
 #[allow(dead_code)]
-pub async fn relay_open(uuid: &str) -> ResultType<String> {
-    request("/relay_open", format!("uuid={}", uuid)).await
+pub async fn relay_open(uuid: &str) -> ResultType<RelayOpenResponse> {
+    Ok(serde_json::from_str(
+        &request("/relay_open", format!("uuid={}", uuid)).await?,
+    )?)
 }
 
 #[allow(dead_code)]
