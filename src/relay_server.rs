@@ -432,16 +432,17 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
                 }
 
                 let api_resp = crate::natfrp::relay_open(&rf.uuid).await;
-                if let Ok(api_resp) = api_resp {
-                    if api_resp != "OK" {
-                        log::info!("RelayRequest rejected {} [{}]: {}", addr, rf.uuid, api_resp);
-                    }
-                } else {
+                if let Err(err) = api_resp {
+                    log::info!("RelayRequest API error {} [{}]: {}", addr, rf.uuid, err);
+                    return;
+                }
+                let api_resp = api_resp.unwrap();
+                if !api_resp.success {
                     log::info!(
-                        "RelayRequest API error {} [{}]: {}",
+                        "RelayRequest rejected {} [{}]: {}",
                         addr,
                         rf.uuid,
-                        api_resp.unwrap_err()
+                        api_resp.message.unwrap_or_default()
                     );
                     return;
                 }
@@ -449,7 +450,7 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
                 if !rf.uuid.is_empty() {
                     let mut peer = PEERS.lock().await.remove(&rf.uuid);
                     if let Some(peer) = peer.as_mut() {
-                        log::info!("Relayrequest {} from {} got paired", rf.uuid, addr);
+                        log::info!("Relayrequest {} from {} got paired, speed: {} Mbps", rf.uuid, addr, api_resp.speed.unwrap() as f64 / 1024. / 1024.);
                         let id = format!("{}:{}", addr.ip(), addr.port());
                         USAGE.write().await.insert(id.clone(), Default::default());
                         if !stream.is_ws() && !peer.is_ws() {
@@ -457,7 +458,15 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
                             stream.set_raw();
                             log::info!("Both are raw");
                         }
-                        if let Err(err) = relay(addr, &mut stream, peer, limiter, id.clone()).await
+                        if let Err(err) = relay(
+                            addr,
+                            &mut stream,
+                            peer,
+                            limiter,
+                            id.clone(),
+                            api_resp.speed.unwrap(),
+                        )
+                        .await
                         {
                             log::info!("Relay of {} closed: {}", addr, err);
                         } else {
@@ -482,6 +491,7 @@ async fn relay(
     peer: &mut Box<dyn StreamTrait>,
     total_limiter: Limiter,
     id: String,
+    speed_limit: u32,
 ) -> ResultType<()> {
     let ip = addr.ip().to_string();
     let mut tm = std::time::Instant::now();
@@ -491,7 +501,7 @@ async fn relay(
     let mut highest_s = 0;
     let mut downgrade: bool = false;
     let mut blacked: bool = false;
-    let limiter = <Limiter>::new(unsafe { SINGLE_BANDWIDTH as _ });
+    let limiter = <Limiter>::new(speed_limit as _);
     let blacklist_limiter = <Limiter>::new(unsafe { LIMIT_SPEED as _ });
     let downgrade_threshold =
         (unsafe { SINGLE_BANDWIDTH as f64 * DOWNGRADE_THRESHOLD } / 1000.) as usize; // in bit/ms
