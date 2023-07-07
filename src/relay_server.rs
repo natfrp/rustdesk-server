@@ -25,15 +25,29 @@ use std::{
     io::prelude::*,
     io::Error,
     net::SocketAddr,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 type Usage = (usize, usize, usize, usize);
+
+#[allow(dead_code)]
+struct Control {
+    uid: u32,
+    conns: AtomicUsize,
+    traffic: AtomicUsize,
+    limiter: Limiter,
+}
 
 lazy_static::lazy_static! {
     static ref PEERS: Mutex<HashMap<String, Box<dyn StreamTrait>>> = Default::default();
     static ref USAGE: RwLock<HashMap<String, Usage>> = Default::default();
     static ref BLACKLIST: RwLock<HashSet<String>> = Default::default();
     static ref BLOCKLIST: RwLock<HashSet<String>> = Default::default();
+
+    static ref USER_CONTROLS: RwLock<HashMap<u32, Arc<Control>>> = Default::default();
 }
 
 static mut DOWNGRADE_THRESHOLD: f64 = 0.66;
@@ -450,29 +464,41 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
                 if !rf.uuid.is_empty() {
                     let mut peer = PEERS.lock().await.remove(&rf.uuid);
                     if let Some(peer) = peer.as_mut() {
-                        log::info!("Relayrequest {} from {} got paired, speed: {} Mbps", rf.uuid, addr, api_resp.speed.unwrap() as f64 / 1024. / 1024.);
-                        let id = format!("{}:{}", addr.ip(), addr.port());
-                        USAGE.write().await.insert(id.clone(), Default::default());
+                        let uid = api_resp.uid.unwrap();
+                        let ctl = {
+                            let mut ctls = USER_CONTROLS.write().await;
+                            if let Some(control) = ctls.get(&uid) {
+                                control
+                                    .limiter
+                                    .set_speed_limit(api_resp.speed.unwrap() as _);
+                                control.clone()
+                            } else {
+                                let control = Arc::new(Control {
+                                    uid,
+                                    conns: AtomicUsize::new(0),
+                                    traffic: AtomicUsize::new(0),
+                                    limiter: <Limiter>::new(api_resp.speed.unwrap() as _),
+                                });
+                                ctls.insert(uid, control.clone());
+                                control
+                            }
+                        };
+
+                        log::info!("Relayrequest {} from {} got paired", rf.uuid, addr);
                         if !stream.is_ws() && !peer.is_ws() {
                             peer.set_raw();
                             stream.set_raw();
                             log::info!("Both are raw");
                         }
-                        if let Err(err) = relay(
-                            addr,
-                            &mut stream,
-                            peer,
-                            limiter,
-                            id.clone(),
-                            api_resp.speed.unwrap(),
-                        )
-                        .await
+
+                        ctl.conns.fetch_add(1, Ordering::Relaxed);
+                        if let Err(err) = relay(&mut stream, peer, limiter, ctl.clone()).await
                         {
                             log::info!("Relay of {} closed: {}", addr, err);
                         } else {
                             log::info!("Relay of {} closed", addr);
                         }
-                        USAGE.write().await.remove(&id);
+                        ctl.conns.fetch_sub(1, Ordering::Relaxed);
                     } else {
                         log::info!("New relay request {} from {}", rf.uuid, addr);
                         PEERS.lock().await.insert(rf.uuid.clone(), Box::new(stream));
@@ -486,25 +512,13 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
 }
 
 async fn relay(
-    addr: SocketAddr,
     stream: &mut impl StreamTrait,
     peer: &mut Box<dyn StreamTrait>,
     total_limiter: Limiter,
-    id: String,
-    speed_limit: u32,
+    ctl: Arc<Control>,
 ) -> ResultType<()> {
-    let ip = addr.ip().to_string();
     let mut tm = std::time::Instant::now();
-    let mut elapsed = 0;
-    let mut total = 0;
     let mut total_s = 0;
-    let mut highest_s = 0;
-    let mut downgrade: bool = false;
-    let mut blacked: bool = false;
-    let limiter = <Limiter>::new(speed_limit as _);
-    let blacklist_limiter = <Limiter>::new(unsafe { LIMIT_SPEED as _ });
-    let downgrade_threshold =
-        (unsafe { SINGLE_BANDWIDTH as f64 * DOWNGRADE_THRESHOLD } / 1000.) as usize; // in bit/ms
     let mut timer = interval(Duration::from_secs(3));
     let mut last_recv_time = std::time::Instant::now();
     loop {
@@ -513,13 +527,8 @@ async fn relay(
                 if let Some(Ok(bytes)) = res {
                     last_recv_time = std::time::Instant::now();
                     let nb = bytes.len() * 8;
-                    if blacked || downgrade {
-                        blacklist_limiter.consume(nb).await;
-                    } else {
-                        limiter.consume(nb).await;
-                    }
+                    ctl.limiter.consume(nb).await;
                     total_limiter.consume(nb).await;
-                    total += nb;
                     total_s += nb;
                     if !bytes.is_empty() {
                         stream.send_raw(bytes.into()).await?;
@@ -532,13 +541,8 @@ async fn relay(
                 if let Some(Ok(bytes)) = res {
                     last_recv_time = std::time::Instant::now();
                     let nb = bytes.len() * 8;
-                    if blacked || downgrade {
-                        blacklist_limiter.consume(nb).await;
-                    } else {
-                        limiter.consume(nb).await;
-                    }
+                    ctl.limiter.consume(nb).await;
                     total_limiter.consume(nb).await;
-                    total += nb;
                     total_s += nb;
                     if !bytes.is_empty() {
                         peer.send_raw(bytes.into()).await?;
@@ -554,36 +558,10 @@ async fn relay(
             }
         }
 
-        let n = tm.elapsed().as_millis() as usize;
-        if n >= 1_000 {
-            if BLOCKLIST.read().await.get(&ip).is_some() {
-                log::info!("{} blocked", ip);
-                break;
-            }
-            blacked = BLACKLIST.read().await.get(&ip).is_some();
+        if tm.elapsed().as_millis() >= 1_000 {
             tm = std::time::Instant::now();
-            let speed = total_s / n;
-            if speed > highest_s {
-                highest_s = speed;
-            }
-            elapsed += n;
-            USAGE.write().await.insert(
-                id.clone(),
-                (elapsed as _, total as _, highest_s as _, speed as _),
-            );
+            ctl.traffic.fetch_add(total_s, Ordering::Relaxed);
             total_s = 0;
-            if elapsed > unsafe { DOWNGRADE_START_CHECK }
-                && !downgrade
-                && total > elapsed * downgrade_threshold
-            {
-                downgrade = true;
-                log::info!(
-                    "Downgrade {}, exceed downgrade threshold {}bit/ms in {}ms",
-                    id,
-                    downgrade_threshold,
-                    elapsed
-                );
-            }
         }
     }
     Ok(())
