@@ -55,9 +55,24 @@ pub async fn start(port: &str, key: &str) -> ResultType<()> {
             io_loop(listen_any(port).await?, listen_any(port2).await?, &key).await;
         }
     };
+    let report_task = async move {
+        let mut timer = interval(Duration::from_secs(40));
+        loop {
+            timer.tick().await;
+            let ctls = USER_CONTROLS.read().await;
+            for (uid, ctl) in ctls.iter() {
+                let traffic = ctl.traffic.swap(0, Ordering::Relaxed);
+                let conns = ctl.conns.load(Ordering::Relaxed);
+                if traffic > 0 || conns > 0 {
+                    log::info!("UID {}: {} bytes, {} conns", uid, traffic, conns);
+                }
+            }
+        }
+    };
     let listen_signal = crate::common::listen_signal();
     tokio::select!(
         res = main_task => res,
+        res = report_task => res,
         res = listen_signal => res,
     )
 }
