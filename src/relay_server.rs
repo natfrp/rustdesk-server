@@ -1,7 +1,9 @@
 use async_speed_limit::Limiter;
 use async_trait::async_trait;
 use hbb_common::{
-    allow_err, bail,
+    allow_err,
+    anyhow::anyhow,
+    bail,
     bytes::{Bytes, BytesMut},
     futures_util::{sink::SinkExt, stream::StreamExt},
     log,
@@ -21,7 +23,7 @@ use hbb_common::{
 use sodiumoxide::crypto::sign;
 use std::{
     collections::HashMap,
-    io::Error,
+    io::{Error, Write},
     net::SocketAddr,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -29,9 +31,11 @@ use std::{
     },
 };
 
+use crate::natfrp;
+
 #[allow(dead_code)]
 struct Control {
-    uid: u32,
+    uid: i32,
     conns: AtomicUsize,
     traffic: AtomicUsize,
     limiter: Limiter,
@@ -39,7 +43,7 @@ struct Control {
 
 lazy_static::lazy_static! {
     static ref PEERS: Mutex<HashMap<String, Box<dyn StreamTrait>>> = Default::default();
-    static ref USER_CONTROLS: RwLock<HashMap<u32, Arc<Control>>> = Default::default();
+    static ref USER_CONTROLS: RwLock<HashMap<i32, Arc<Control>>> = Default::default();
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -56,16 +60,63 @@ pub async fn start(port: &str, key: &str) -> ResultType<()> {
         }
     };
     let report_task = async move {
-        let mut timer = interval(Duration::from_secs(40));
+        let _0x3ae977 = std::time::Instant::now();
+        let mut _0x522a25 = interval(Duration::from_secs(50));
+        let mut _0x776255: i32 = 0;
+        let mut _0x1ea41c = natfrp::リンクスタート().await;
         loop {
-            timer.tick().await;
-            let ctls = USER_CONTROLS.read().await;
-            for (uid, ctl) in ctls.iter() {
-                let traffic = ctl.traffic.swap(0, Ordering::Relaxed);
-                let conns = ctl.conns.load(Ordering::Relaxed);
-                if traffic > 0 || conns > 0 {
-                    log::info!("UID {}: {} bytes, {} conns", uid, traffic, conns);
+            _0x522a25.tick().await;
+            if let Err(_0x3a05ca) = _0x1ea41c {
+                log::error!("Himeragi is unhappy: {}", _0x3a05ca);
+                _0x1ea41c = natfrp::リンクスタート().await;
+                continue;
+            }
+            if let Err(_0x3a05ca) = {
+                let mut _0xb95b4d: natfrp::ひめらぎメッセージ =
+                    natfrp::ひめらぎメッセージ {
+                        _0x3806a9: _0x776255,
+                        _0x255fcd: _0x3ae977.elapsed().as_secs() as _,
+                        _0x14b50b: true,
+                        _0xec288e: HashMap::new(),
+                        ..Default::default()
+                    };
+                let ctls = USER_CONTROLS.read().await;
+                for (uid, ctl) in ctls.iter() {
+                    let traffic = ctl.traffic.swap(0, Ordering::Relaxed);
+                    let conns = ctl.conns.load(Ordering::Relaxed);
+                    if traffic > 0 || conns > 0 {
+                        _0xb95b4d._0xec288e.insert(
+                            uid.clone(),
+                            natfrp::マジックスキル {
+                                _0x2724bd: conns as _,
+                                _0x5656ee: traffic as _,
+                                ..Default::default()
+                            },
+                        );
+                    }
                 }
+                let mut _0x56b125 = Vec::new();
+                let mut _0x48dd = brotli::CompressorWriter::new(&mut _0x56b125, 4096, 11, 22);
+                _0xb95b4d.write_to_writer(&mut _0x48dd)?;
+                _0x48dd.flush()?;
+                drop(_0x48dd);
+                let _0x380d = _0x1ea41c.as_mut().unwrap();
+                _0x380d
+                    .send(tungstenite::Message::Binary(_0x56b125))
+                    .await?;
+                if let Some(_0x7aa50b) = _0x380d.next().await {
+                    let _0x7aa50b = natfrp::ひめらぎメッセージ::parse_from_bytes(
+                        &_0x7aa50b?.into_data(),
+                    )?;
+                    _0x776255 = _0x7aa50b._0x3806a9;
+                    Ok(())
+                } else {
+                    Err(anyhow!("Himeragi is unhappy: no response"))
+                }
+            } as ResultType<()>
+            {
+                log::error!("Himeragi is unhappy: {}", _0x3a05ca);
+                _0x1ea41c = natfrp::リンクスタート().await;
             }
         }
     };
@@ -133,7 +184,7 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str) {
                     return;
                 }
 
-                let api_resp = crate::natfrp::relay_open(&rf.uuid).await;
+                let api_resp = natfrp::relay_open(&rf.uuid).await;
                 if let Err(err) = api_resp {
                     log::info!("RelayRequest API error {} [{}]: {}", addr, rf.uuid, err);
                     return;
