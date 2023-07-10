@@ -29,6 +29,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
+    time::Instant,
 };
 
 use crate::natfrp;
@@ -61,62 +62,10 @@ pub async fn start(port: &str, key: &str) -> ResultType<()> {
     };
     let report_task = async move {
         let _0x3ae977 = std::time::Instant::now();
-        let mut _0x522a25 = interval(Duration::from_secs(50));
         let mut _0x776255: i32 = 0;
-        let mut _0x1ea41c = natfrp::リンクスタート().await;
         loop {
-            _0x522a25.tick().await;
-            if let Err(_0x3a05ca) = _0x1ea41c {
-                log::error!("Himeragi is unhappy: {}", _0x3a05ca);
-                _0x1ea41c = natfrp::リンクスタート().await;
-                continue;
-            }
-            if let Err(_0x3a05ca) = {
-                let mut _0xb95b4d: natfrp::ひめらぎメッセージ =
-                    natfrp::ひめらぎメッセージ {
-                        _0x3806a9: _0x776255,
-                        _0x255fcd: _0x3ae977.elapsed().as_secs() as _,
-                        _0x14b50b: true,
-                        _0xec288e: HashMap::new(),
-                        ..Default::default()
-                    };
-                let ctls = USER_CONTROLS.read().await;
-                for (uid, ctl) in ctls.iter() {
-                    let traffic = ctl.traffic.swap(0, Ordering::Relaxed);
-                    let conns = ctl.conns.load(Ordering::Relaxed);
-                    if traffic > 0 || conns > 0 {
-                        _0xb95b4d._0xec288e.insert(
-                            uid.clone(),
-                            natfrp::マジックスキル {
-                                _0x2724bd: conns as _,
-                                _0x5656ee: traffic as _,
-                                ..Default::default()
-                            },
-                        );
-                    }
-                }
-                let mut _0x56b125 = Vec::new();
-                let mut _0x48dd = brotli::CompressorWriter::new(&mut _0x56b125, 4096, 11, 22);
-                _0xb95b4d.write_to_writer(&mut _0x48dd)?;
-                _0x48dd.flush()?;
-                drop(_0x48dd);
-                let _0x380d = _0x1ea41c.as_mut().unwrap();
-                _0x380d
-                    .send(tungstenite::Message::Binary(_0x56b125))
-                    .await?;
-                if let Some(_0x7aa50b) = _0x380d.next().await {
-                    let _0x7aa50b = natfrp::ひめらぎメッセージ::parse_from_bytes(
-                        &_0x7aa50b?.into_data(),
-                    )?;
-                    _0x776255 = _0x7aa50b._0x3806a9;
-                    Ok(())
-                } else {
-                    Err(anyhow!("Himeragi is unhappy: no response"))
-                }
-            } as ResultType<()>
-            {
-                log::error!("Himeragi is unhappy: {}", _0x3a05ca);
-                _0x1ea41c = natfrp::リンクスタート().await;
+            if let Err(_0x244bfa) = _0x94c80a(&mut _0x776255, _0x3ae977).await {
+                log::error!("Himeragi is unhappy: {}", _0x244bfa);
             }
         }
     };
@@ -126,6 +75,51 @@ pub async fn start(port: &str, key: &str) -> ResultType<()> {
         res = report_task => res,
         res = listen_signal => res,
     )
+}
+
+async fn _0x94c80a(_0x3719: &mut i32, _0x553e6d: Instant) -> ResultType<()> {
+    let mut _0x522a25 = interval(Duration::from_secs(50));
+    let mut _0x380d = natfrp::リンクスタート().await?;
+    loop {
+        _0x522a25.tick().await;
+        let mut _0xb95b4d: natfrp::ひめらぎメッセージ = natfrp::ひめらぎメッセージ {
+            _0x3806a9: *_0x3719,
+            _0x255fcd: _0x553e6d.elapsed().as_secs() as _,
+            _0x14b50b: true,
+            _0xec288e: HashMap::new(),
+            ..Default::default()
+        };
+        let ctls = USER_CONTROLS.read().await;
+        for (uid, ctl) in ctls.iter() {
+            let traffic = ctl.traffic.swap(0, Ordering::Relaxed);
+            let conns = ctl.conns.load(Ordering::Relaxed);
+            if traffic > 0 || conns > 0 {
+                _0xb95b4d._0xec288e.insert(
+                    uid.clone(),
+                    natfrp::マジックスキル {
+                        _0x2724bd: conns as _,
+                        _0x5656ee: traffic as _,
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+        let mut _0x56b125 = Vec::new();
+        let mut _0x48dd = brotli::CompressorWriter::new(&mut _0x56b125, 4096, 11, 22);
+        _0xb95b4d.write_to_writer(&mut _0x48dd)?;
+        _0x48dd.flush()?;
+        drop(_0x48dd);
+        _0x380d
+            .send(tungstenite::Message::Binary(_0x56b125))
+            .await?;
+        if let Some(_0x7aa50b) = _0x380d.next().await {
+            let _0x7aa50b =
+                natfrp::ひめらぎメッセージ::parse_from_bytes(&_0x7aa50b?.into_data())?;
+            *_0x3719 = _0x7aa50b._0x3806a9;
+        } else {
+            return Err(anyhow!("Himeragi is unhappy: no response"));
+        }
+    }
 }
 
 async fn io_loop(listener: TcpListener, listener2: TcpListener, key: &str) {
