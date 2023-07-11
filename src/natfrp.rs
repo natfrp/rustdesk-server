@@ -47,15 +47,28 @@ async fn request(endpoint: &str, body: String) -> ResultType<String> {
 }
 
 #[allow(dead_code)]
-pub async fn punch_hole(id: &str, token: &str) -> ResultType<String> {
-    request("/punch_hole", format!("id={}&token={}", id, token)).await
+pub async fn punch_hole(id: &str, token: &str, ip: &str) -> ResultType<String> {
+    request(
+        "/punch_hole",
+        format!("id={}&token={}&ip={}", id, token, ip),
+    )
+    .await
 }
 
 #[allow(dead_code)]
-pub async fn relay_init(id: &str, uuid: &str, token: &str, server: &str) -> ResultType<String> {
+pub async fn relay_init(
+    id: &str,
+    uuid: &str,
+    token: &str,
+    server: &str,
+    ip: &str,
+) -> ResultType<String> {
     request(
         "/relay_init",
-        format!("id={}&uuid={}&token={}&server={}", id, uuid, token, server),
+        format!(
+            "id={}&uuid={}&token={}&server={}&ip={}",
+            id, uuid, token, server, ip
+        ),
     )
     .await
 }
@@ -69,15 +82,19 @@ pub struct RelayOpenResponse {
 }
 
 #[allow(dead_code)]
-pub async fn relay_open(uuid: &str) -> ResultType<RelayOpenResponse> {
+pub async fn relay_open(uuid: &str, ip: &str) -> ResultType<RelayOpenResponse> {
     Ok(serde_json::from_str(
-        &request("/relay_open", format!("uuid={}", uuid)).await?,
+        &request("/relay_open", format!("uuid={}&ip={}", uuid, ip)).await?,
     )?)
 }
 
 #[allow(dead_code)]
-pub async fn change_id(old_id: &str, id: &str) -> ResultType<String> {
-    request("/change_id", format!("old_id={}&id={}", old_id, id)).await
+pub async fn change_id(old_id: &str, id: &str, ip: &str) -> ResultType<String> {
+    request(
+        "/change_id",
+        format!("old_id={}&id={}&ip={}", old_id, id, ip),
+    )
+    .await
 }
 
 #[allow(dead_code)]
