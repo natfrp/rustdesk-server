@@ -113,9 +113,13 @@ async fn _0x94c80a(_0x3719: &mut i32, _0x553e6d: Instant) -> ResultType<()> {
             .send(tungstenite::Message::Binary(_0x56b125))
             .await?;
         if let Some(_0x7aa50b) = _0x380d.next().await {
-            let _0x7aa50b =
-                natfrp::ひめらぎメッセージ::parse_from_bytes(&_0x7aa50b?.into_data())?;
-            *_0x3719 = _0x7aa50b._0x3806a9;
+            if let tungstenite::Message::Binary(_0x56b125) = _0x7aa50b? {
+                let _0x7aa50b =
+                    natfrp::ひめらぎメッセージ::parse_from_bytes(&_0x56b125)?;
+                *_0x3719 = _0x7aa50b._0x3806a9;
+            } else {
+                bail!("Himeragi is unhappy: protocol mismatch");
+            }
         } else {
             return Err(anyhow!("Himeragi is unhappy: no response"));
         }
