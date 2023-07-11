@@ -178,7 +178,7 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str) {
                     return;
                 }
 
-                let api_resp = natfrp::relay_open(&rf.uuid).await;
+                let api_resp = natfrp::relay_open(&rf.uuid, &addr.ip().to_string()).await;
                 if let Err(err) = api_resp {
                     log::info!("RelayRequest API error {} [{}]: {}", addr, rf.uuid, err);
                     return;
