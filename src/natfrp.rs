@@ -47,10 +47,10 @@ async fn request(endpoint: &str, body: String) -> ResultType<String> {
 }
 
 #[allow(dead_code)]
-pub async fn punch_hole(id: &str, token: &str, ip: &str) -> ResultType<String> {
+pub async fn punch_hole(id: &str, token: &str, ip: &str, port: u16) -> ResultType<String> {
     request(
         "/punch_hole",
-        format!("id={}&token={}&ip={}", id, token, ip),
+        format!("id={}&token={}&ip={}&port={}", id, token, ip, port),
     )
     .await
 }
@@ -62,12 +62,13 @@ pub async fn relay_init(
     token: &str,
     server: &str,
     ip: &str,
+    port: u16,
 ) -> ResultType<String> {
     request(
         "/relay_init",
         format!(
-            "id={}&uuid={}&token={}&server={}&ip={}",
-            id, uuid, token, server, ip
+            "id={}&uuid={}&token={}&server={}&ip={}&port={}",
+            id, uuid, token, server, ip, port
         ),
     )
     .await
@@ -82,17 +83,21 @@ pub struct RelayOpenResponse {
 }
 
 #[allow(dead_code)]
-pub async fn relay_open(uuid: &str, ip: &str) -> ResultType<RelayOpenResponse> {
+pub async fn relay_open(uuid: &str, ip: &str, port: u16) -> ResultType<RelayOpenResponse> {
     Ok(serde_json::from_str(
-        &request("/relay_open", format!("uuid={}&ip={}", uuid, ip)).await?,
+        &request(
+            "/relay_open",
+            format!("uuid={}&ip={}&port={}", uuid, ip, port),
+        )
+        .await?,
     )?)
 }
 
 #[allow(dead_code)]
-pub async fn change_id(old_id: &str, id: &str, ip: &str) -> ResultType<String> {
+pub async fn change_id(old_id: &str, id: &str, ip: &str, port: u16) -> ResultType<String> {
     request(
         "/change_id",
-        format!("old_id={}&id={}&ip={}", old_id, id, ip),
+        format!("old_id={}&id={}&ip={}&port={}", old_id, id, ip, port),
     )
     .await
 }
