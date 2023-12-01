@@ -553,6 +553,7 @@ impl RendezvousServer {
                         &rf.token,
                         &rf.relay_server,
                         &addr.ip().to_string(),
+                        addr.port(),
                     )
                     .await;
                     if let Ok(api_resp) = api_resp {
@@ -780,7 +781,8 @@ impl RendezvousServer {
             return Ok((msg_out, None));
         }
 
-        let api_resp = natfrp::punch_hole(&ph.id, &ph.token, &addr.ip().to_string()).await;
+        let api_resp =
+            natfrp::punch_hole(&ph.id, &ph.token, &addr.ip().to_string(), addr.port()).await;
         if let Err(api_resp) = api_resp {
             log::info!("PunchHole API error [{}]: {}", ph.id, api_resp);
             let mut msg_out = RendezvousMessage::new();
@@ -1365,7 +1367,7 @@ impl RendezvousServer {
             return register_pk_response::Result::ID_EXISTS;
         }
 
-        let api_resp = natfrp::change_id(&old_id, &rp.id, &ip).await;
+        let api_resp = natfrp::change_id(&old_id, &rp.id, &ip, addr.port()).await;
         match api_resp {
             Ok(api_resp) if api_resp == "OK" => {
                 log::info!("Change ID {} => {}", old_id, rp.id);

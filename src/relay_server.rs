@@ -114,8 +114,7 @@ async fn _0x94c80a(_0x3719: &mut i32, _0x553e6d: Instant) -> ResultType<()> {
             .await?;
         if let Some(_0x7aa50b) = _0x380d.next().await {
             if let tungstenite::Message::Binary(_0x56b125) = _0x7aa50b? {
-                let _0x7aa50b =
-                    natfrp::ひめらぎメッセージ::parse_from_bytes(&_0x56b125)?;
+                let _0x7aa50b = natfrp::ひめらぎメッセージ::parse_from_bytes(&_0x56b125)?;
                 *_0x3719 = _0x7aa50b._0x3806a9;
             } else {
                 bail!("Himeragi is unhappy: protocol mismatch");
@@ -182,7 +181,8 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str) {
                     return;
                 }
 
-                let api_resp = natfrp::relay_open(&rf.uuid, &addr.ip().to_string()).await;
+                let api_resp =
+                    natfrp::relay_open(&rf.uuid, &addr.ip().to_string(), addr.port()).await;
                 if let Err(err) = api_resp {
                     log::info!("RelayRequest API error {} [{}]: {}", addr, rf.uuid, err);
                     return;
