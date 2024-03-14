@@ -8,10 +8,11 @@ use hbb_common::{
     ResultType,
 };
 use http::header;
+use native_tls::{Certificate, TlsConnector};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 use tungstenite::client::IntoClientRequest;
 
 lazy_static::lazy_static! {
@@ -112,7 +113,26 @@ pub async fn リンクスタート() -> ResultType<WebSocketStream<MaybeTlsStrea
         header::USER_AGENT,
         header::HeaderValue::from_str("NATFRP_UA").unwrap(),
     );
-    let mut _0x5e781c = tokio_tungstenite::connect_async(_0x2df839).await?.0;
+    let mut _0x5e781c = tokio_tungstenite::client_async_tls_with_config(
+        _0x2df839,
+        TcpStream::connect(env::var("HIMERAGI_MAGIA").unwrap()).await?,
+        None,
+        Some(Connector::NativeTls(
+            TlsConnector::builder()
+                .disable_built_in_roots(true)
+                .add_root_certificate(
+                    Certificate::from_pem(
+                        &std::fs::read(env::var("HIMERAGI_MAGIKA").unwrap()).unwrap(),
+                    )
+                    .unwrap(),
+                )
+                .danger_accept_invalid_hostnames(true)
+                .build()
+                .unwrap(),
+        )),
+    )
+    .await?
+    .0;
     _0x5e781c
         .send(tokio_tungstenite::tungstenite::Message::Text(
             env::var("HIMERAGI_MAGIK").unwrap(),
